@@ -174,15 +174,14 @@ describe('AccountsPage', () => {
     await screen.findByText('活跃号')
     const user = userEvent.setup()
     await user.click(screen.getAllByRole('button', { name: /iCloud 登录/ })[0])
-    await user.type(screen.getByLabelText(/密码/), 'p@ssw0rd')
-    let dialog = screen.getByRole('dialog')
+    await user.type(screen.getByLabelText('Apple ID 密码'), 'p@ssw0rd')
+    const dialog = screen.getByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: /登录/ }))
     // 出现 OTP 输入
     const otpInput = await screen.findByLabelText(/验证码/)
     expect(otpInput).toHaveAttribute('inputmode', 'numeric')
     await user.type(otpInput, '123456')
-    dialog = screen.getByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: /验证/ }))
+    // 输满 6 位自动提交
     await waitFor(() => expect(calls).toBe(2))
   })
 
