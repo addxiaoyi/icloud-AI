@@ -4,7 +4,9 @@ import { request, ApiError } from '../api/client'
 import type { AccountSummary, Alias } from '../api/types'
 import AsyncState from '../components/AsyncState'
 import CreateAliasDialog from '../components/CreateAliasDialog'
+import BatchRegisterDialog from '../components/BatchRegisterDialog'
 import ConfirmDialog from '../components/ConfirmDialog'
+import NoAccountGuide from '../components/NoAccountGuide'
 import { useToast } from '../components/ToastProvider'
 import { copyText } from '../utils/clipboard'
 import {
@@ -14,11 +16,27 @@ import {
   IconClock,
   IconInbox,
   IconPlus,
+  IconList,
   IconSearch,
   IconTrash,
 } from '../components/icons'
 
 type SortDirection = 'asc' | 'desc'
+function friendlyError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'VALIDATION_ERROR' && err.message.includes('Cookie')) {
+      return '该账号尚未配置 Cookie：请到「账号」页使用 iCloud 登录或配置 Cookie 后重试。'
+    }
+    if (err.code === 'UPSTREAM_UNAUTHORIZED') {
+      return 'iCloud 凭证已过期：请到「账号」页重新登录该账号。'
+    }
+    if (err.code === 'RATE_LIMITED') {
+      return '操作过于频繁被 iCloud 限流，请稍等后再试。'
+    }
+    return err.message
+  }
+  return fallback
+}
 
 function parseAliasDate(raw?: string): Date | null {
   const value = raw?.trim()
@@ -68,11 +86,17 @@ export default function AliasesPage() {
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [createOpen, setCreateOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
   const [confirm, setConfirm] = useState<{
     type: 'deactivate' | 'reactivate' | 'delete'
     alias: Alias
   } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkAction, setBulkAction] = useState<'deactivate' | 'delete' | null>(null)
+  const [bulkError, setBulkError] = useState('')
+
+  const selectedCount = selected.size
   const [actionError, setActionError] = useState('')
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -95,7 +119,7 @@ export default function AliasesPage() {
       })
       .catch((err) => {
         if (cancelled) return
-        setError(err instanceof ApiError ? err.message : '网络连接失败，请检查服务状态')
+        setError(friendlyError(err, '加载别名失败，请检查网络状态'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -120,7 +144,7 @@ export default function AliasesPage() {
       })
       .catch((err) => {
         if (cancelled) return
-        setError(err instanceof ApiError ? err.message : '网络连接失败，请检查服务状态')
+        setError(friendlyError(err, '加载别名失败，请检查网络状态'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -195,12 +219,67 @@ export default function AliasesPage() {
       setConfirm(null)
       setRetryKey((k) => k + 1)
     } catch (err) {
-      setActionError(
-        err instanceof ApiError ? err.message : '网络连接失败，请检查服务状态',
-      )
+      setActionError(friendlyError(err, '操作失败，请检查网络状态'))
     } finally {
       setBusy(false)
     }
+  }
+
+  async function runBulkAction() {
+    if (!bulkAction || selected.size === 0) return
+    setBusy(true)
+    setBulkError('')
+    const ids = [...selected]
+    let okCount = 0
+    const failed: string[] = []
+    for (const id of ids) {
+      const alias = aliases.find((a) => a.anonymousId === id)
+      if (!alias) continue
+      try {
+        if (bulkAction === 'delete') {
+          await request(
+            `/api/aliases/${encodeURIComponent(id)}`,
+            { method: 'DELETE', body: JSON.stringify({ account_id: accountId }) },
+          )
+        } else {
+          await request(
+            `/api/aliases/${encodeURIComponent(id)}/deactivate`,
+            { method: 'POST', body: JSON.stringify({ account_id: accountId }) },
+          )
+        }
+        okCount++
+      } catch (err) {
+        failed.push(`${alias.email}: ${err instanceof ApiError ? err.message : '失败'}`)
+      }
+    }
+    setBusy(false)
+    setBulkAction(null)
+    setSelected(new Set())
+    if (failed.length > 0) {
+      setBulkError(`成功 ${okCount}，失败 ${failed.length}：${failed.slice(0, 3).join('；')}${failed.length > 3 ? '…' : ''}`)
+    } else {
+      show(bulkAction === 'delete' ? `已删除 ${okCount} 个别名` : `已停用 ${okCount} 个别名`)
+    }
+    setRetryKey((k) => k + 1)
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      if (prev.size === filtered.length) return new Set()
+      return new Set(filtered.map((a) => a.anonymousId))
+    })
   }
 
   function handleCreated(email: string) {
@@ -210,7 +289,7 @@ export default function AliasesPage() {
   }
 
   if (accounts.length === 0 && !loading && !error) {
-    return <p className="empty-state">暂无账号，请先到「账号」页面添加账号</p>
+    return <NoAccountGuide intent="无法创建别名" />
   }
 
   const confirmTitle =
@@ -251,8 +330,35 @@ export default function AliasesPage() {
             <IconPlus size={16} />
             创建别名
           </button>
+          <button onClick={() => setBatchOpen(true)} disabled={!accountId}>
+            <IconList size={16} />
+            批量注册
+          </button>
         </div>
       </div>
+
+      {selectedCount > 0 && (
+        <div className="card" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <strong>已选 {selectedCount} 个</strong>
+          <button
+            disabled={busy}
+            onClick={() => setBulkAction('deactivate')}
+          >
+            批量停用
+          </button>
+          <button
+            className="danger"
+            disabled={busy}
+            onClick={() => setBulkAction('delete')}
+          >
+            <IconTrash size={14} />
+            批量删除
+          </button>
+          <button disabled={busy} onClick={() => setSelected(new Set())}>
+            取消选择
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
@@ -308,6 +414,15 @@ export default function AliasesPage() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    aria-label="全选"
+                    checked={filtered.length > 0 && selected.size === filtered.length}
+                    onChange={toggleSelectAll}
+                    style={{ width: 'auto' }}
+                  />
+                </th>
                 <th>邮箱</th>
                 <th>标签</th>
                 <th>状态</th>
@@ -329,6 +444,15 @@ export default function AliasesPage() {
             <tbody>
               {filtered.map((alias) => (
                 <tr key={alias.anonymousId}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${alias.email}`}
+                      checked={selected.has(alias.anonymousId)}
+                      onChange={() => toggleSelect(alias.anonymousId)}
+                      style={{ width: 'auto' }}
+                    />
+                  </td>
                   <td>
                     <button
                       type="button"
@@ -395,6 +519,33 @@ export default function AliasesPage() {
         onCreated={handleCreated}
       />
 
+      {batchOpen && (
+        <BatchRegisterDialog
+          accountId={accountId}
+          accounts={accounts}
+          onClose={() => setBatchOpen(false)}
+          onCreated={() => setRetryKey((k) => k + 1)}
+        />
+      )}
+
+      {bulkAction && (
+        <ConfirmDialog
+          title={bulkAction === 'delete' ? '批量删除别名' : '批量停用别名'}
+          message={
+            bulkAction === 'delete'
+              ? `将删除选中的 ${selectedCount} 个别名。此操作不可恢复，也不影响 Apple 账号本身。`
+              : `将停用选中的 ${selectedCount} 个别名，之后将不再接收邮件。`
+          }
+          confirmLabel={bulkAction === 'delete' ? '确认删除' : '确认停用'}
+          requireText={bulkAction === 'delete' ? String(selectedCount) : undefined}
+          requireLabel={bulkAction === 'delete' ? `输入数量 ${selectedCount} 确认` : undefined}
+          open
+          busy={busy}
+          onClose={() => setBulkAction(null)}
+          onConfirm={() => void runBulkAction()}
+        />
+      )}
+
       {confirm && (
         <ConfirmDialog
           title={confirmTitle}
@@ -422,6 +573,12 @@ export default function AliasesPage() {
       {actionError && (
         <div className="alert-error" role="alert" style={{ marginTop: 16 }}>
           {actionError}
+        </div>
+      )}
+
+      {bulkError && (
+        <div className="alert-error" role="alert" style={{ marginTop: 16 }}>
+          {bulkError}
         </div>
       )}
     </section>
