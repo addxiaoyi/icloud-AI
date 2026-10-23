@@ -335,6 +335,28 @@ X-CSRF-Token: <token>
 
 ---
 
+### 续期会话
+
+```http
+POST /api/auth/renew
+X-CSRF-Token: <token>
+```
+
+将会话过期时间重置为当前时间 + 会话 TTL(`ICLOUD_HME_SESSION_TTL`,默认 12h),并下发新的 `hme_session` Cookie。响应同登录:
+
+```json
+{
+  "success": true,
+  "data": {
+    "csrf_token": "新令牌",
+    "expires_at": "2026-10-24T04:00:00+08:00"
+  }
+}
+```
+
+- 会话无效返回 `401 AUTH_REQUIRED`
+- WebUI 在会话剩余不足 30 分钟时会在顶栏显示「续期」按钮
+
 ## curl 使用示例（Cookie Jar + CSRF）
 
 ```bash

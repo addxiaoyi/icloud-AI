@@ -30,6 +30,7 @@ function renderApp(initialPath = '/accounts') {
         <Routes>
           <Route path="/login" element={<TestApp />} />
           <Route path="/accounts" element={<TestApp />} />
+          <Route path="/dashboard" element={<TestApp />} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,

@@ -17,6 +17,10 @@ interface AuthContextValue {
   status: AuthStatus
   login: (password: string) => Promise<void>
   logout: () => Promise<void>
+  /** 会话过期时间(ms 时间戳), 未知为 null */
+  expiresAt: number | null
+  /** 续期当前会话, 返回新过期时间戳 */
+  renew: () => Promise<number>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -31,6 +35,7 @@ export function useAuth(): AuthContextValue {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('checking')
+  const [expiresAt, setExpiresAt] = useState<number | null>(null)
   const checkRef = useRef(false)
 
   useEffect(() => {
@@ -43,6 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((data) => {
         if (cancelled) return
         setCSRFToken(data.csrf_token)
+        if (data.expires_at) {
+          const ts = new Date(data.expires_at).getTime()
+          if (!Number.isNaN(ts)) setExpiresAt(ts)
+        }
         setStatus('authenticated')
       })
       .catch(() => {
@@ -54,18 +63,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const renew = useCallback(async (): Promise<number> => {
+    const data = await request<LoginResult>('/api/auth/renew', {
+      method: 'POST',
+    })
+    setCSRFToken(data.csrf_token)
+    const ts = data.expires_at ? new Date(data.expires_at).getTime() : NaN
+    if (!Number.isNaN(ts)) setExpiresAt(ts)
+    return ts
+  }, [])
   const logout = useCallback(async () => {
+    setExpiresAt(null)
     try {
       await request('/api/auth/logout', { method: 'POST' })
     } catch {
       // 无论请求结果如何都清空本地状态
     }
     setCSRFToken(null)
+    setExpiresAt(null)
     setStatus('anonymous')
   }, [])
 
   const handleUnauthorized = useCallback(() => {
     setCSRFToken(null)
+    setExpiresAt(null)
     setStatus('anonymous')
   }, [])
 
@@ -79,12 +100,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ password }),
     })
     setCSRFToken(data.csrf_token)
+    if (data.expires_at) {
+          const ts = new Date(data.expires_at).getTime()
+          if (!Number.isNaN(ts)) setExpiresAt(ts)
+        }
     setStatus('authenticated')
   }, [])
 
   const value = useMemo(
-    () => ({ status, login, logout }),
-    [status, login, logout],
+    () => ({ status, login, logout, expiresAt, renew }),
+    [status, login, logout, expiresAt, renew],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -146,6 +146,21 @@ func (m *Manager) Validate(sessionID string) (Session, bool) {
 	return Session{CSRFToken: rec.csrfToken, ExpiresAt: rec.expiresAt}, true
 }
 
+// Extend 续期会话:将过期时间重置为 now+TTL,返回新过期时间。
+func (m *Manager) Extend(sessionID string) (Session, bool) {
+	key := sha256.Sum256([]byte(sessionID))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pruneLocked()
+	rec, exists := m.sessions[key]
+	if !exists {
+		return Session{}, false
+	}
+	rec.expiresAt = m.now().Add(m.ttl)
+	m.sessions[key] = rec
+	return Session{CSRFToken: rec.csrfToken, ExpiresAt: rec.expiresAt}, true
+}
+
 // ValidateCSRF 校验 CSRF token(常量时间比较)。
 func (m *Manager) ValidateCSRF(sessionID, token string) bool {
 	key := sha256.Sum256([]byte(sessionID))

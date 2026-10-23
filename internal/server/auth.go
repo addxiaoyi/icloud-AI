@@ -126,6 +126,25 @@ func (s *Server) handleSession(c *gin.Context) {
 	})
 }
 
+// handleRenew 处理 POST /api/auth/renew(续期当前会话 + CSRF)。
+func (s *Server) handleRenew(c *gin.Context) {
+	sessionID := sessionIDFromCookie(c)
+	if sessionID == "" {
+		failCode(c, http.StatusUnauthorized, "AUTH_REQUIRED", "请先登录")
+		return
+	}
+	sess, valid := s.auth.Extend(sessionID)
+	if !valid {
+		failCode(c, http.StatusUnauthorized, "AUTH_REQUIRED", "会话已失效,请重新登录")
+		return
+	}
+	setSessionCookie(c, sessionID, sess.ExpiresAt, s.cfg.SecureCookie)
+	ok(c, gin.H{
+		"csrf_token": sess.CSRFToken,
+		"expires_at": sess.ExpiresAt.Format(time.RFC3339),
+	})
+}
+
 // handleLogout 处理 POST /api/auth/logout(需会话 + CSRF)。
 func (s *Server) handleLogout(c *gin.Context) {
 	sessionID := sessionIDFromCookie(c)

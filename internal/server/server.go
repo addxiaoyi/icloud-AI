@@ -96,6 +96,7 @@ func (s *Server) register() {
 		authed.Use(requireSession(s.auth))
 		{
 			authed.POST("/auth/logout", csrfCheck(s.auth), s.handleLogout)
+authed.POST("/auth/renew", csrfCheck(s.auth), s.handleRenew)
 
 			// ===== 账号管理 =====
 			authed.GET("/accounts", s.listAccountsHandler)
