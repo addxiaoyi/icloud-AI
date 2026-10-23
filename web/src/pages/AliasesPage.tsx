@@ -282,6 +282,22 @@ export default function AliasesPage() {
     })
   }
 
+  function exportAliasesCsv() {
+    const rows = [["email", "label", "active", "createdAt"]]
+    for (const a of filtered) {
+      rows.push([a.email, a.label, a.active ? "yes" : "no", a.createdAt ?? ""])
+    }
+    const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n")
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `aliases-${accountId}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    show(`已导出 ${filtered.length} 个别名`)
+  }
+
   function handleCreated(email: string) {
     setCreateOpen(false)
     showCopyable(email)
@@ -329,6 +345,9 @@ export default function AliasesPage() {
           <button className="primary" onClick={() => setCreateOpen(true)} disabled={!accountId}>
             <IconPlus size={16} />
             创建别名
+          </button>
+          <button onClick={exportAliasesCsv} disabled={!accountId || filtered.length === 0}>
+            导出 CSV
           </button>
           <button onClick={() => setBatchOpen(true)} disabled={!accountId}>
             <IconList size={16} />

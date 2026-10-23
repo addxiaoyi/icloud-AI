@@ -39,15 +39,38 @@ function extractCode(text: string): string | null {
   return null
 }
 
-function CodeBadge({ code }: { code: string }) {
+const USED_KEY = "inbox-used-codes"
+
+function loadUsedCodes(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(USED_KEY) ?? "[]") as string[]
+  } catch {
+    return []
+  }
+}
+
+function markCodeUsed(code: string) {
+  try {
+    const used = new Set(loadUsedCodes())
+    used.add(code)
+    // 最多保留 200 条, 防止无限增长
+    const arr = [...used].slice(-200)
+    localStorage.setItem(USED_KEY, JSON.stringify(arr))
+  } catch {
+    // ignore
+  }
+}
+
+function CodeBadge({ code, used, onUse }: { code: string; used?: boolean; onUse?: (code: string) => void }) {
   return (
     <button
       type="button"
-      className="badge badge-active"
-      style={{ border: 'none', cursor: 'copy', marginRight: 6, fontFamily: 'monospace' }}
-      title="点击复制验证码"
+      className={used ? "badge badge-neutral" : "badge badge-active"}
+      style={{ border: "none", cursor: "copy", marginRight: 6, fontFamily: "monospace", textDecoration: used ? "line-through" : undefined }}
+      title={used ? "已复制过，点击再复制" : "点击复制验证码"}
       onClick={() => {
         void navigator.clipboard.writeText(code)
+        onUse?.(code)
       }}
     >
       {code}
@@ -178,6 +201,7 @@ export default function InboxPage() {
     const [autoRefresh, setAutoRefresh] = useState(true)
   const knownIdsRef = useRef<Set<string> | null>(null)
   const [newIds, setNewIds] = useState<Set<string>>(new Set())
+  const [usedCodes, setUsedCodes] = useState<Set<string>>(() => new Set(loadUsedCodes()))
 function ingestMessages(messages: InboxMessage[]) {
     const ids = new Set(messages.map((m) => m.id))
     const prev = knownIdsRef.current
@@ -211,6 +235,11 @@ function ingestMessages(messages: InboxMessage[]) {
   }
   function clearNewHighlight() {
     setNewIds(new Set())
+  }
+
+  function handleUseCode(code: string) {
+    markCodeUsed(code)
+    setUsedCodes((prev) => new Set(prev).add(code))
   }
 
   // 查询收件箱;账号变化时清空旧邮件并中止旧请求
@@ -430,7 +459,7 @@ function ingestMessages(messages: InboxMessage[]) {
                           const code = extractCode(`${m.subject} ${m.preview}`)
                           return (
                             <>
-                              {code && <CodeBadge code={code} />}
+                              {code && <CodeBadge code={code} used={usedCodes.has(code)} onUse={handleUseCode} />}
                               <span>{m.preview || '—'}</span>
                               <button className="icon-button danger" aria-label="删除邮件" title="删除邮件" onClick={() => setDeleteFor(m)}><IconTrash size={14} /></button>
                             </>

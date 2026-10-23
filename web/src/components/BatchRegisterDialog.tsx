@@ -22,10 +22,18 @@ interface BatchItem {
   error?: string
 }
 
-interface StoredBatch {
+interface HistoryEntry {
   savedAt: string
   accountId: string
   items: BatchItem[]
+}
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as HistoryEntry[]
+  } catch {
+    return []
+  }
 }
 
 const CODE_PATTERNS = [
@@ -34,7 +42,7 @@ const CODE_PATTERNS = [
   /\b(\d{4,8})\b/,
 ]
 
-const STORAGE_KEY = 'batch-register-last-result'
+const STORAGE_KEY = 'batch-register-history'
 
 function extractCode(text: string): string | null {
   for (const pat of CODE_PATTERNS) {
@@ -86,40 +94,39 @@ export default function BatchRegisterDialog({
   const [submitBody, setSubmitBody] = useState('')
   const [notifyOnCode, setNotifyOnCode] = useState(true)
   const [running, setRunning] = useState(false)
-  const [items, setItems] = useState<BatchItem[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const stored = JSON.parse(raw) as StoredBatch
-        if (stored.items?.length) return stored.items
-      }
-    } catch {
-      // 忽略损坏的存储
-    }
-    return []
-  })
+  const [items, setItems] = useState<BatchItem[]>(() => loadHistory()[0]?.items ?? [])
+  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory())
   const [error, setError] = useState('')
   const cancelRef = useRef(false)
   const autoCopyRef = useRef(false)
+  const itemsRef = useRef<BatchItem[]>([])
   const notifyRef = useRef(true)
   const submitCfgRef = useRef<{ url: string; method: string; headers: Record<string, string>; body: string } | null>(null)
   const { show, showCopyable } = useToast()
 
-  // 运行中/结束后持久化
-  useEffect(() => {
-    if (!running && items.length > 0) {
-      try {
-        const stored: StoredBatch = {
-          savedAt: new Date().toISOString(),
-          accountId: target,
-          items,
-        }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
-      } catch {
-        // 存储失败不影响功能
-      }
+  // 批结束保存历史(在 handleStart / rerunFailed 中调用)
+  function saveHistory(entryItems: BatchItem[]) {
+    if (entryItems.length === 0) return
+    const entry: HistoryEntry = {
+      savedAt: new Date().toISOString(),
+      accountId: target,
+      items: entryItems,
     }
-  }, [running, items, target])
+    const updated = [entry, ...loadHistory().filter((h) => h.items !== entryItems)].slice(0, 10)
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+    } catch {
+      // ignore
+    }
+    setHistory(updated)
+  }
+
+  // items 落定后同步到 ref(非运行时)
+  useEffect(() => {
+    if (!running) {
+      itemsRef.current = items
+    }
+  }, [items, running])
 
   function patchItem(index: number, patch: Partial<BatchItem>) {
     setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
@@ -272,11 +279,13 @@ export default function BatchRegisterDialog({
           body: submitBody,
         }
       : null
-    setItems(Array.from({ length: n }, (_, i) => ({
+    const newItems: BatchItem[] = Array.from({ length: n }, (_, i) => ({
       email: '',
       label: `${labelPrefix.trim() || 'batch'}-${i + 1}`,
       status: 'pending' as const,
-    })))
+    }))
+    setItems(newItems)
+    itemsRef.current = newItems
     cancelRef.current = false
     onCreated()
 
@@ -302,6 +311,7 @@ export default function BatchRegisterDialog({
     await Promise.all(workers)
 
     setRunning(false)
+    saveHistory(itemsRef.current.length > 0 ? itemsRef.current : items)
     show(`批量完成：成功提取验证码 ${done}/${n}${cancelRef.current ? '（已取消）' : ''}`)
   }
 
@@ -361,6 +371,7 @@ export default function BatchRegisterDialog({
       }
     }
     setRunning(false)
+    saveHistory(items.length > 0 ? items : itemsRef.current)
     show(`重跑完成：累计成功 ${done}/${items.length}`)
   }
 
@@ -594,6 +605,41 @@ export default function BatchRegisterDialog({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {items.length > 0 && !running && history.length > 0 && (
+        <div className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label htmlFor="batch-history" style={{ margin: 0, whiteSpace: 'nowrap' }}>
+            历史批次
+          </label>
+          <select
+            id="batch-history"
+            style={{ width: 'auto', flex: 1 }}
+            defaultValue=""
+            onChange={(e) => {
+              const idx = Number(e.target.value)
+              if (!Number.isNaN(idx) && history[idx]) setItems(history[idx].items)
+            }}
+          >
+            <option value="">— 选择要查看的批次 —</option>
+            {history.map((h, i) => (
+              <option key={h.savedAt} value={i}>
+                {new Date(h.savedAt).toLocaleString()} · {h.items.length} 条 · 成功{' '}
+                {h.items.filter((x) => x.status === 'done').length}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.removeItem(STORAGE_KEY)
+              setHistory([])
+              show('历史记录已清空')
+            }}
+          >
+            清空
+          </button>
         </div>
       )}
 
