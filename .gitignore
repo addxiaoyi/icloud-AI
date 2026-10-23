@@ -27,3 +27,5 @@ js
 accounts.json
 *.exe
 build/
+__pycache__/
+*.pyc
