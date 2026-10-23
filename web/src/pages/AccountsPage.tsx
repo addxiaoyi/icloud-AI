@@ -229,16 +229,19 @@ export default function AccountsPage() {
         </div>
       </AsyncState>
 
-      <AccountFormDialog
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => {
-          setFormOpen(false)
-          show('账号已保存')
-          void load()
-        }}
-        editing={editing ? { id: editing.id, name: editing.name, icloudEmail: editing.icloud_email, host: editing.host } : null}
-      />
+      {formOpen && (
+        <AccountFormDialog
+          open
+          key={editing?.id ?? 'new'}
+          onClose={() => setFormOpen(false)}
+          onSaved={() => {
+            setFormOpen(false)
+            show('账号已保存')
+            void load()
+          }}
+          editing={editing ? { id: editing.id, name: editing.name, icloudEmail: editing.icloud_email, host: editing.host } : null}
+        />
+      )}
       {cookieFor && (
         <CookieDialog
           accountId={cookieFor.id}

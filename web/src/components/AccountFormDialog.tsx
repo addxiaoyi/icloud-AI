@@ -104,6 +104,7 @@ export default function AccountFormDialog({
           onChange={(e) => setIcloudEmail(e.target.value)}
           disabled={Boolean(editing)}
         />
+        {editing && <p className="hint">iCloud 邮箱创建后不可修改。</p>}
       </div>
       <div className="form-field">
         <label htmlFor="acc-host">区域</label>
