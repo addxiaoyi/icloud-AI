@@ -55,10 +55,10 @@ export default function Dialog({ title, open, onClose, children }: DialogProps) 
   if (!open) return null
 
   return (
-    <button
-      type="button"
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events -- 关闭由 Escape 键统一处理(见上方 effect)
+    <div
+      role="presentation"
       className="dialog-backdrop"
-      aria-label="关闭对话框"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -73,6 +73,6 @@ export default function Dialog({ title, open, onClose, children }: DialogProps) 
         <h3>{title}</h3>
         {children}
       </div>
-    </button>
+    </div>
   )
 }
