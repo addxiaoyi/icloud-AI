@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { useToast } from './ToastProvider'
 import { useTheme, type ThemeChoice } from '../utils/theme'
-import { IconAccounts, IconAliases, IconDashboard, IconInbox, IconLogout, IconShield } from './icons'
+import { IconAccounts, IconAliases, IconDashboard, IconGear, IconInbox, IconLogout, IconShield } from './icons'
 
 const THEME_LABELS: Record<ThemeChoice, string> = {
   system: '跟随系统',
@@ -114,6 +114,10 @@ export default function AppShell() {
           <NavLink to="/inbox">
             <IconInbox />
             收件箱
+          </NavLink>
+          <NavLink to="/settings">
+            <IconGear />
+            设置
           </NavLink>
         </nav>
         <span className="spacer" />

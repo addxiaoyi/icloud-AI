@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage'
 import AccountsPage from './pages/AccountsPage'
 import AliasesPage from './pages/AliasesPage'
 import InboxPage from './pages/InboxPage'
+import SettingsPage from './pages/SettingsPage'
 
 function ProtectedLayout() {
   const { status } = useAuth()
@@ -32,6 +33,7 @@ export default function App() {
               <Route path="/accounts" element={<AccountsPage />} />
               <Route path="/aliases" element={<AliasesPage />} />
               <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>

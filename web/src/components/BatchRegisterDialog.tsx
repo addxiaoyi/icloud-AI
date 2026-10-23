@@ -44,6 +44,18 @@ function extractCode(text: string): string | null {
   return null
 }
 
+function parseHeaders(raw: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const line of raw.split(/\r?\n/)) {
+    const idx = line.indexOf(':')
+    if (idx < 1) continue
+    const key = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (key && value) out[key] = value
+  }
+  return out
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -67,6 +79,12 @@ export default function BatchRegisterDialog({
   const [codeTimeout, setCodeTimeout] = useState(120)
   const [concurrency, setConcurrency] = useState(1)
   const [autoCopy, setAutoCopy] = useState(false)
+  const [enableSubmit, setEnableSubmit] = useState(false)
+  const [submitUrl, setSubmitUrl] = useState('')
+  const [submitMethod, setSubmitMethod] = useState('POST')
+  const [submitHeaders, setSubmitHeaders] = useState('')
+  const [submitBody, setSubmitBody] = useState('')
+  const [notifyOnCode, setNotifyOnCode] = useState(true)
   const [running, setRunning] = useState(false)
   const [items, setItems] = useState<BatchItem[]>(() => {
     try {
@@ -83,6 +101,8 @@ export default function BatchRegisterDialog({
   const [error, setError] = useState('')
   const cancelRef = useRef(false)
   const autoCopyRef = useRef(false)
+  const notifyRef = useRef(true)
+  const submitCfgRef = useRef<{ url: string; method: string; headers: Record<string, string>; body: string } | null>(null)
   const { show, showCopyable } = useToast()
 
   // 运行中/结束后持久化
@@ -153,6 +173,46 @@ export default function BatchRegisterDialog({
     return [target]
   }
 
+  /** 收到验证码后的后续动作: 通知推送 + 可选两步式提交 */
+  async function afterCode(alias: string, code: string, label: string, index: number): Promise<string> {
+    let statusNote = ''
+    if (notifyRef.current) {
+      try {
+        await request('/api/notify/send', {
+          method: 'POST',
+          body: JSON.stringify({ alias, code, title: label }),
+        })
+      } catch {
+        statusNote = '通知失败'
+      }
+    }
+    const cfg = submitCfgRef.current
+    if (cfg) {
+      try {
+        const data = await request<{ success: boolean; step2?: { status: number; error?: string } }>('/api/submit', {
+          method: 'POST',
+          body: JSON.stringify({
+            alias,
+            code,
+            label,
+            step2: { url: cfg.url, method: cfg.method, headers: cfg.headers, body: cfg.body },
+          }),
+        })
+        if (!data.success) {
+          statusNote = statusNote ? `${statusNote}；提交失败` : '提交失败'
+          patchItem(index, { error: `提交响应异常: ${data.step2?.status ?? ''}` })
+        } else {
+          statusNote = statusNote ? `${statusNote}；已提交` : '已提交'
+        }
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : '提交请求失败'
+        statusNote = statusNote ? `${statusNote}；${msg}` : msg
+        patchItem(index, { error: msg })
+      }
+    }
+    return statusNote
+  }
+
   async function createAndPoll(acct: string, label: string, index: number, timeoutSec: number): Promise<'done' | 'timeout' | 'error'> {
     patchItem(index, { status: 'creating', accountId: acct })
     try {
@@ -163,9 +223,13 @@ export default function BatchRegisterDialog({
       patchItem(index, { email: data.email, status: 'waiting' })
       const code = await pollCode(acct, data.email, timeoutSec)
       if (code) {
+        const note = await afterCode(data.email, code, label, index)
         patchItem(index, { status: 'done', code })
         if (autoCopyRef.current) {
           void copyText(code)
+        }
+        if (note) {
+          show(`${label}: ${note}`)
         }
         return 'done'
       }
@@ -198,6 +262,16 @@ export default function BatchRegisterDialog({
     setRunning(true)
     setError('')
     autoCopyRef.current = autoCopy
+
+    notifyRef.current = notifyOnCode
+    submitCfgRef.current = enableSubmit && submitUrl.trim()
+      ? {
+          url: submitUrl.trim(),
+          method: submitMethod,
+          headers: parseHeaders(submitHeaders),
+          body: submitBody,
+        }
+      : null
     setItems(Array.from({ length: n }, (_, i) => ({
       email: '',
       label: `${labelPrefix.trim() || 'batch'}-${i + 1}`,
@@ -266,6 +340,10 @@ export default function BatchRegisterDialog({
     setError('')
     cancelRef.current = false
     autoCopyRef.current = autoCopy
+    notifyRef.current = notifyOnCode
+    submitCfgRef.current = enableSubmit && submitUrl.trim()
+      ? { url: submitUrl.trim(), method: submitMethod, headers: parseHeaders(submitHeaders), body: submitBody }
+      : null
     const accts = targetAccounts()
     const targets = items
       .map((it, i) => ({ it, i }))
@@ -409,9 +487,86 @@ export default function BatchRegisterDialog({
               收到验证码后自动复制到剪贴板
             </label>
           </div>
+
+          <div className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              id="batch-notify"
+              type="checkbox"
+              checked={notifyOnCode}
+              onChange={(e) => setNotifyOnCode(e.target.checked)}
+              style={{ width: 'auto' }}
+            />
+            <label htmlFor="batch-notify" style={{ margin: 0 }}>
+              收到验证码时推送通知（在「设置」页配置 Bark/Telegram）
+            </label>
+          </div>
+
+          <div className="form-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              id="batch-enable-submit"
+              type="checkbox"
+              checked={enableSubmit}
+              onChange={(e) => setEnableSubmit(e.target.checked)}
+              style={{ width: 'auto' }}
+            />
+            <label htmlFor="batch-enable-submit" style={{ margin: 0 }}>
+              收到验证码后自动提交（两步式注册）
+            </label>
+          </div>
+          {enableSubmit && (
+            <>
+              <div className="form-field">
+                <label htmlFor="submit-url">提交 URL 模板</label>
+                <input
+                  id="submit-url"
+                  value={submitUrl}
+                  onChange={(e) => setSubmitUrl(e.target.value)}
+                  placeholder="https://target.com/api/verify?email={alias}&code={code}"
+                />
+                <p className="hint">
+                  支持占位符：{'{alias}'} {'{code}'} {'{label}'} {'{url_escape_alias}'}。服务端代理请求，无 CORS 限制。
+                </p>
+              </div>
+              <div className="form-field">
+                <label htmlFor="submit-method">方法</label>
+                <select
+                  id="submit-method"
+                  value={submitMethod}
+                  onChange={(e) => setSubmitMethod(e.target.value)}
+                >
+                  <option value="POST">POST</option>
+                  <option value="GET">GET</option>
+                  <option value="PUT">PUT</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+              </div>
+              <div className="form-field">
+                <label htmlFor="submit-headers">请求头（每行 Key: Value）</label>
+                <textarea
+                  id="submit-headers"
+                  value={submitHeaders}
+                  onChange={(e) => setSubmitHeaders(e.target.value)}
+                  rows={2}
+                  placeholder={'Authorization: Bearer xxx'}
+                  style={{ fontFamily: 'monospace' }}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="submit-body">请求体模板</label>
+                <textarea
+                  id="submit-body"
+                  value={submitBody}
+                  onChange={(e) => setSubmitBody(e.target.value)}
+                  rows={3}
+                  placeholder={'{"email": "{alias}", "code": "{code}"}'}
+                  style={{ fontFamily: 'monospace' }}
+                />
+                <p className="hint">GET 请求忽略请求体。</p>
+              </div>
+            </>
+          )}
         </>
       )}
-
       {items.length > 0 && (
         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
           <table style={{ width: '100%', fontSize: '0.9em' }}>
