@@ -85,6 +85,17 @@ export default function LoginPage() {
         <p>批量管理 iCloud 隐藏邮箱与验证码邮件</p>
       </div>
       <form onSubmit={handleSubmit} className="card login-form">
+        {/* Chrome 密码表单可访问性建议: 提供用户名字段(此处仅需管理员密码, 隐藏即可) */}
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          value="admin"
+          readOnly
+          hidden
+          aria-hidden="true"
+          tabIndex={-1}
+        />
         {error && (
           <div className="alert-error" role="alert">
             {error}

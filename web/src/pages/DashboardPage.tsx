@@ -49,12 +49,17 @@ export default function DashboardPage() {
             } else {
               aliasesByAccount[acc.id] = []
             }
-            try {
-              const inboxData = await request<{ messages: InboxMessage[] }>(
-                `/api/inbox?account_id=${encodeURIComponent(acc.id)}&limit=100&days=1`,
-              )
-              inboxByAccount[acc.id] = inboxData.messages ?? []
-            } catch {
+            if (acc.status === 'active' && acc.has_cookies) {
+              try {
+                const inboxData = await request<{ messages: InboxMessage[] }>(
+                  `/api/inbox?account_id=${encodeURIComponent(acc.id)}&limit=100&days=1`,
+                )
+                inboxByAccount[acc.id] = inboxData.messages ?? []
+              } catch {
+                inboxByAccount[acc.id] = []
+              }
+            } else {
+              // 未配置凭证的账号跳过收件箱拉取, 避免 400 噪音
               inboxByAccount[acc.id] = []
             }
           }),
