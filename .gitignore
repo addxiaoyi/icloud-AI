@@ -15,7 +15,7 @@ docs/
 .ccg/
 .superpowers/
 # Web frontend build output & deps
-/web/node_modules/
+node_modules/
 /internal/webui/dist/*
 !/internal/webui/dist/placeholder.txt
 !capture_statsig_pair.js
