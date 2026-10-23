@@ -114,7 +114,7 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: /添加账号/ }))
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: '新账号' } })
     fireEvent.change(screen.getByLabelText(/iCloud 邮箱/), { target: { value: 'new@icloud.com' } })
-    await user.click(screen.getByRole('button', { name: /保存/ }))
+    await user.click(screen.getByRole('button', { name: '仅保存' }))
     // 请求期间按钮禁用;成功后列表刷新
     await waitFor(() => expect(screen.getByText('新账号')).toBeInTheDocument())
   })
@@ -131,7 +131,7 @@ describe('AccountsPage', () => {
     expect(within(hostSelect).getByText('全球区 (icloud.com)')).toBeInTheDocument()
     expect(within(hostSelect).getByText('中国区 (icloud.com.cn)')).toBeInTheDocument()
     // 空名称提交被阻止(前端校验),dialog 保持打开
-    await user.click(screen.getByRole('button', { name: /保存/ }))
+    await user.click(screen.getByRole('button', { name: '仅保存' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 

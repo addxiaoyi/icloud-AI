@@ -6,6 +6,8 @@ interface AccountFormDialogProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
+  /** 添加模式专属: 保存成功后回调新账号 id, 用于一键进入 iCloud 登录 */
+  onCreatedWithId?: (id: string) => void
   editing?: {
     id: string
     name: string
@@ -19,6 +21,7 @@ export default function AccountFormDialog({
   open,
   onClose,
   onSaved,
+  onCreatedWithId,
   editing,
 }: AccountFormDialogProps) {
   const [name, setName] = useState(editing?.name ?? '')
@@ -39,7 +42,7 @@ export default function AccountFormDialog({
     setSubmitting(false)
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(thenLogin = false) {
     if (submitting) return
     if (!name.trim()) {
       setError('请输入账号名称')
@@ -58,10 +61,14 @@ export default function AccountFormDialog({
           body: JSON.stringify({ name, icloud_email: icloudEmail, host }),
         })
       } else {
-        await request('/api/accounts', {
+        const created = await request<{ id: string }>('/api/accounts', {
           method: 'POST',
           body: JSON.stringify({ name, icloud_email: icloudEmail, host, proxy, cookies }),
         })
+        if (thenLogin && onCreatedWithId && created?.id) {
+          onCreatedWithId(created.id)
+          return
+        }
       }
       reset()
       onSaved()
@@ -101,7 +108,14 @@ export default function AccountFormDialog({
           id="acc-email"
           type="email"
           value={icloudEmail}
-          onChange={(e) => setIcloudEmail(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value
+            setIcloudEmail(v)
+            // 名称未手动填写时, 用邮箱前缀自动填充
+            if (!name.trim() && v.includes('@')) {
+              setName(v.split('@')[0].slice(0, 64))
+            }
+          }}
           disabled={Boolean(editing)}
         />
         {editing && <p className="hint">iCloud 邮箱创建后不可修改。</p>}
@@ -145,9 +159,19 @@ export default function AccountFormDialog({
       )}
       <div className="form-actions">
         <button onClick={onClose}>取消</button>
-        <button className="primary" onClick={() => void handleSubmit()} disabled={submitting}>
-          {submitting ? '保存中…' : '保存'}
+        <button onClick={() => void handleSubmit(false)} disabled={submitting}>
+          {submitting ? '保存中…' : '仅保存'}
         </button>
+        {!editing && (
+          <button className="primary" onClick={() => void handleSubmit(true)} disabled={submitting || !icloudEmail.trim()}>
+            {submitting ? '处理中…' : '保存并登录 iCloud →'}
+          </button>
+        )}
+        {editing && (
+          <button className="primary" onClick={() => void handleSubmit(false)} disabled={submitting}>
+            保存
+          </button>
+        )}
       </div>
     </Dialog>
   )

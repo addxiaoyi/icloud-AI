@@ -69,7 +69,7 @@ export default function AccountsPage() {
   const [deleteFor, setDeleteFor] = useState<AccountSummary | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  const { show } = useToast()
+  const { show, showCopyable } = useToast()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -240,6 +240,27 @@ export default function AccountsPage() {
             void load()
           }}
           editing={editing ? { id: editing.id, name: editing.name, icloudEmail: editing.icloud_email, host: editing.host } : null}
+          onCreatedWithId={(id) => {
+            setFormOpen(false)
+            // 新账号不在当前列表中, 构造最小对象直接进入登录
+            setLoginFor({
+              id,
+              name: '新账号',
+              real_email: '',
+              icloud_email: '',
+              host: 'icloud.com',
+              status: 'pending',
+              alias_total: 0,
+              alias_active: 0,
+              has_cookies: false,
+              has_app_password: false,
+              has_proxy: false,
+              last_validated: '',
+              created_at: '',
+            })
+            show('账号已创建，请继续登录 iCloud')
+            void load()
+          }}
         />
       )}
       {cookieFor && (
@@ -259,7 +280,7 @@ export default function AccountsPage() {
           open
           onClose={() => setLoginFor(null)}
           onSaved={() => {
-            show('登录成功')
+            showCopyable(loginFor.name, '登录成功！去「别名」页创建隐藏邮箱吧')
             void load()
           }}
         />
