@@ -5,8 +5,55 @@ import type { AccountSummary, Alias, FullMessage, InboxResult, InboxMessage } fr
 import AsyncState from '../components/AsyncState'
 import Dialog from '../components/Dialog'
 import ConfirmDialog from '../components/ConfirmDialog'
+import NoAccountGuide from '../components/NoAccountGuide'
 import { useToast } from '../components/ToastProvider'
 import { IconKey, IconMail, IconTrash } from '../components/icons'
+
+function friendlyError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'VALIDATION_ERROR' && err.message.includes('Cookie')) {
+      return '该账号尚未配置 Cookie：请到「账号」页使用 iCloud 登录或配置 Cookie 后重试。'
+    }
+    if (err.code === 'UPSTREAM_UNAUTHORIZED') {
+      return 'iCloud 凭证已过期：请到「账号」页重新登录该账号。'
+    }
+    if (err.code === 'RATE_LIMITED') {
+      return '请求过于频繁被限流，请稍等后再试。'
+    }
+    return err.message
+  }
+  return fallback
+}
+
+const CODE_PATTERNS = [
+  /(?:验证码|verification code|code is|您的代码|OTP)\D{0,10}(\d{4,8})/i,
+  /\b(\d{6})\b/,
+  /\b(\d{4,8})\b/,
+]
+
+function extractCode(text: string): string | null {
+  for (const pat of CODE_PATTERNS) {
+    const m = text.match(pat)
+    if (m) return m[1]
+  }
+  return null
+}
+
+function CodeBadge({ code }: { code: string }) {
+  return (
+    <button
+      type="button"
+      className="badge badge-active"
+      style={{ border: 'none', cursor: 'copy', marginRight: 6, fontFamily: 'monospace' }}
+      title="点击复制验证码"
+      onClick={() => {
+        void navigator.clipboard.writeText(code)
+      }}
+    >
+      {code}
+    </button>
+  )
+}
 
 function formatDate(raw: string): string {
   const d = new Date(raw)
@@ -96,7 +143,7 @@ export default function InboxPage() {
       })
       .catch((err) => {
         if (cancelled) return
-        setError(err instanceof ApiError ? err.message : '网络连接失败，请检查服务状态')
+        setError(friendlyError(err, '加载收件箱失败，请检查网络状态'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -127,6 +174,45 @@ export default function InboxPage() {
     }
   }, [accountId])
 
+  /** 收到新数据时对比已知邮件 ID, 标记新邮件并蜂鸣(在 fetch 回调中调用, 非渲染期) */
+    const [autoRefresh, setAutoRefresh] = useState(true)
+  const knownIdsRef = useRef<Set<string> | null>(null)
+  const [newIds, setNewIds] = useState<Set<string>>(new Set())
+function ingestMessages(messages: InboxMessage[]) {
+    const ids = new Set(messages.map((m) => m.id))
+    const prev = knownIdsRef.current
+    knownIdsRef.current = ids
+    if (prev === null) return
+    const fresh: string[] = []
+    for (const id of ids) {
+      if (!prev.has(id)) fresh.push(id)
+    }
+    if (fresh.length === 0) return
+    setNewIds((cur) => {
+      const next = new Set(cur)
+      for (const id of fresh) next.add(id)
+      return next
+    })
+    // 蜂鸣提示新邮件(Web Audio, 无需资源文件)
+    try {
+      const ctx = new AudioContext()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 880
+      gain.gain.value = 0.04
+      osc.start()
+      osc.stop(ctx.currentTime + 0.15)
+      setTimeout(() => void ctx.close(), 300)
+    } catch {
+      // 音频不可用忽略
+    }
+  }
+  function clearNewHighlight() {
+    setNewIds(new Set())
+  }
+
   // 查询收件箱;账号变化时清空旧邮件并中止旧请求
   useEffect(() => {
     if (!accountId) return
@@ -143,12 +229,13 @@ export default function InboxPage() {
     })
       .then((data) => {
         if (cancelled) return
+        ingestMessages(data.messages ?? [])
         setResult(data)
         setError('')
       })
       .catch((err) => {
         if (cancelled || err instanceof ApiError && err.status === 0) return
-        setError(err instanceof ApiError ? err.message : '网络连接失败，请检查服务状态')
+        setError(friendlyError(err, '加载收件箱失败，请检查网络状态'))
         setResult(null)
       })
       .finally(() => {
@@ -178,7 +265,35 @@ export default function InboxPage() {
     setSearchParams({ account_id: id }, { replace: true })
   }
 
+
   const methodText = result?.method === 'imap' ? 'IMAP' : 'Web API'
+
+  // 自动刷新: 可开关, 默认开启; 新邮件到达时高亮 + 蜂鸣
+
+  useEffect(() => {
+    if (!autoRefresh || !accountId) return
+    const timer = setInterval(() => {
+      setRetryKey((k) => k + 1)
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [autoRefresh, accountId])
+
+  // 快捷键: r 手动刷新(输入框聚焦时忽略)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return
+      if (e.key === 'r' && accountId) {
+        setRetryKey((k) => k + 1)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [accountId])
+
+  if (accounts.length === 0 && !loading && !error) {
+    return <NoAccountGuide intent="无法查看收件箱" />
+  }
 
   return (
     <section>
@@ -245,10 +360,30 @@ export default function InboxPage() {
               <option value={90}>90 天</option>
             </select>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
             <button className="primary" onClick={handleSearch}>
               查询
             </button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, whiteSpace: 'nowrap' }}>
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                style={{ width: 'auto' }}
+              />
+              自动刷新
+            </label>
+            {newIds.size > 0 && (
+              <button
+                type="button"
+                className="badge badge-active"
+                style={{ border: 'none', cursor: 'pointer', marginBottom: 6 }}
+                onClick={clearNewHighlight}
+                title="点击清除高亮"
+              >
+                {newIds.size} 封新邮件
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -285,12 +420,23 @@ export default function InboxPage() {
                 </thead>
                 <tbody>
                   {result.messages.map((m) => (
-                    <tr key={m.id}>
+                    <tr key={m.id} style={newIds.has(m.id) ? { background: 'var(--color-primary-soft)' } : undefined}>
                       <td><button className="link-button" onClick={() => void openMessage(m)}>{m.subject || '（无主题）'}</button></td>
                       <td>{m.from}</td>
                       <td>{m.to}</td>
                       <td>{formatDate(m.date)}</td>
-                      <td>{m.preview || '—'} <button className="icon-button danger" aria-label="删除邮件" title="删除邮件" onClick={() => setDeleteFor(m)}><IconTrash size={14} /></button></td>
+                      <td>
+                        {(() => {
+                          const code = extractCode(`${m.subject} ${m.preview}`)
+                          return (
+                            <>
+                              {code && <CodeBadge code={code} />}
+                              <span>{m.preview || '—'}</span>
+                              <button className="icon-button danger" aria-label="删除邮件" title="删除邮件" onClick={() => setDeleteFor(m)}><IconTrash size={14} /></button>
+                            </>
+                          )
+                        })()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

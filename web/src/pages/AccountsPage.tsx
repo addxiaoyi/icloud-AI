@@ -194,13 +194,22 @@ export default function AccountsPage() {
                         <IconEdit size={14} />
                         编辑
                       </button>
-                      <button onClick={() => setCookieFor(acc)}>更新 Cookie</button>
-                      <button onClick={() => setLoginFor(acc)}>
-                        <IconKey size={14} />
-                        iCloud 登录
-                      </button>
+                      {!acc.has_cookies && (
+                        <button className="primary" onClick={() => setLoginFor(acc)}>
+                          <IconKey size={14} />
+                          {acc.status === 'pending' ? '登录以启用' : 'iCloud 登录'}
+                        </button>
+                      )}
+                      {!acc.has_cookies && <button onClick={() => setCookieFor(acc)}>配置 Cookie</button>}
+                      {acc.has_cookies && <button onClick={() => setCookieFor(acc)}>更新 Cookie</button>}
+                      {acc.has_cookies && (
+                        <button onClick={() => setLoginFor(acc)}>
+                          <IconKey size={14} />
+                          iCloud 登录
+                        </button>
+                      )}
                       <button onClick={() => setAppPwdFor(acc)}>设置 App 密码</button>
-                      <button onClick={() => setMailboxFor(acc)}>接入收件邮箱</button>
+                      <button onClick={() => setMailboxFor(acc)}>配置收件邮箱</button>
                       <button onClick={() => setProxyFor(acc)}>设置代理</button>
                       <Link to={`/aliases?account_id=${acc.id}`}>别名</Link>
                       <Link to={`/inbox?account_id=${acc.id}`}>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Dialog from './Dialog'
 import { request, ApiError } from '../api/client'
 import type { MailboxSummary } from '../api/types'
@@ -11,7 +11,7 @@ interface MailboxDialogProps {
   onSaved: () => void
 }
 
-export default function MailboxDialog({ accountId, current, open, onClose, onSaved }: MailboxDialogProps) {
+export function MailboxDialogInner({ accountId, current, onClose, onSaved }: MailboxDialogProps) {
   const [provider, setProvider] = useState(current?.provider || 'qq')
   const [email, setEmail] = useState(current?.email || '')
   const [host, setHost] = useState(current?.imap_host || 'imap.qq.com')
@@ -19,16 +19,6 @@ export default function MailboxDialog({ accountId, current, open, onClose, onSav
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    setProvider(current?.provider || 'qq')
-    setEmail(current?.email || '')
-    setHost(current?.imap_host || 'imap.qq.com')
-    setPort(String(current?.imap_port || 993))
-    setCode('')
-    setError('')
-  }, [open, current])
 
   function changeProvider(value: string) {
     setProvider(value)
@@ -61,7 +51,7 @@ export default function MailboxDialog({ accountId, current, open, onClose, onSav
   }
 
   return (
-    <Dialog title="接入收件邮箱" open={open} onClose={onClose}>
+    <Dialog title="接入收件邮箱" open onClose={onClose}>
       {error && <div className="alert-error" role="alert">{error}</div>}
       <div className="form-field">
         <label htmlFor="mailbox-provider">邮箱服务商</label>
@@ -82,4 +72,10 @@ export default function MailboxDialog({ accountId, current, open, onClose, onSav
       </div>
     </Dialog>
   )
+}
+
+/** 用 key 重挂载重置表单, 避免 effect 里 setState */
+export default function MailboxDialog(props: MailboxDialogProps) {
+  if (!props.open) return null
+  return <MailboxDialogInner key={props.accountId + JSON.stringify(props.current ?? null)} {...props} />
 }
