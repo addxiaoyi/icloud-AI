@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"icloud-hme/internal/account"
+	"icloud-hme/internal/notify"
 	"icloud-hme/internal/server"
 )
 
@@ -67,6 +68,7 @@ func main() {
 		AdminPassword: adminPassword,
 		SessionTTL:    sessionTTL,
 		SecureCookie:  secureCookie,
+		Notifier:      notify.New(abs),
 	})
 	if err != nil {
 		log.Fatalf("初始化服务失败: %v", err)

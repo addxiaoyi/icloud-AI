@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"icloud-hme/internal/account"
+	"icloud-hme/internal/notify"
 	"icloud-hme/internal/auth"
 	"icloud-hme/internal/webui"
 )
@@ -31,15 +32,18 @@ type Config struct {
 	AdminPassword string
 	SessionTTL    time.Duration
 	SecureCookie  bool
+	// Notifier 可选;为 nil 时通知接口返回 503
+	Notifier *notify.Notifier
 }
 
 // Server 封装 Gin 引擎、账号后端与认证。
 type Server struct {
-	be      Backend
-	auth    *auth.Manager
-	limiter *auth.Limiter
-	cfg     Config
-	r       *gin.Engine
+	be       Backend
+	auth     *auth.Manager
+	limiter  *auth.Limiter
+	cfg      Config
+	notifier *notify.Notifier
+	r        *gin.Engine
 }
 
 // New 创建 Server。mgr 为账号管理器,cfg 为安全配置。
@@ -59,9 +63,10 @@ func newWithBackend(be Backend, cfg Config) *Server {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	s := &Server{
-		be:      be,
-		limiter: auth.NewLimiter(nil, 15*time.Minute, 5, 10000),
-		cfg:     cfg,
+		be:       be,
+		limiter:  auth.NewLimiter(nil, 15*time.Minute, 5, 10000),
+		cfg:      cfg,
+		notifier: cfg.Notifier,
 	}
 	s.auth, _ = auth.NewManager(auth.Options{
 		Password: cfg.AdminPassword,
@@ -113,6 +118,12 @@ authed.POST("/auth/renew", csrfCheck(s.auth), s.handleRenew)
 			authed.POST("/create", csrfCheck(s.auth), s.createAliasHandler)
 
 			// ===== 核心接口 2: 读取邮件 =====
+			authed.GET("/notify/config", s.getNotifyConfigHandler)
+			authed.PUT("/notify/config", csrfCheck(s.auth), s.putNotifyConfigHandler)
+			authed.POST("/notify/test", csrfCheck(s.auth), s.testNotifyHandler)
+			authed.POST("/notify/send", csrfCheck(s.auth), s.sendNotifyHandler)
+			authed.POST("/submit", csrfCheck(s.auth), s.handleSubmitHandler)
+
 			authed.GET("/inbox", s.listInboxHandler)
 			authed.GET("/inbox/:message_id", s.getMessageHandler)
 			authed.DELETE("/inbox/:message_id", csrfCheck(s.auth), s.deleteMessageHandler)

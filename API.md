@@ -357,6 +357,49 @@ X-CSRF-Token: <token>
 - 会话无效返回 `401 AUTH_REQUIRED`
 - WebUI 在会话剩余不足 30 分钟时会在顶栏显示「续期」按钮
 
+### 通知设置
+
+```http
+GET /api/notify/config
+PUT /api/notify/config
+POST /api/notify/test   # 发送测试通知
+POST /api/notify/send   # 推送一条验证码通知 {alias, code, from?, title?}
+```
+
+`PUT /api/notify/config` 请求体:
+
+```json
+{
+  "bark_url": "https://api.day.app/yourkey",
+  "telegram_bot_token": "123456:ABC",
+  "telegram_chat_id": "你的ChatID"
+}
+```
+
+- 配置持久化于 `data/notify.json`(权限 0600);响应中 Bot Token 已脱敏
+- 收到验证码时可由客户端调用 `/api/notify/send` 触发推送,或 WebUI 批量注册勾选「推送通知」
+
+### 两步式注册代理提交
+
+```http
+POST /api/submit
+X-CSRF-Token: <token>
+```
+
+```json
+{
+  "alias": "abc@icloud.com",
+  "code": "778899",
+  "label": "备注",
+  "step1": { "url": "https://t.com/register", "method": "POST", "body": "{\"email\": \"{alias}\"}" },
+  "step2": { "url": "https://t.com/verify", "method": "POST", "body": "{\"email\": \"{alias}\", \"code\": \"{code}\"}" }
+}
+```
+
+- `step2` 必填,`step1` 可选;URL/Headers/Body 支持 `{alias}` `{code}` `{label}` `{url_escape_alias}` 占位符
+- 服务端代理请求(无浏览器 CORS 限制),单步超时 30s,响应体截断 64KiB
+- 任一步骤失败返回 `502 UPSTREAM_FAILURE`,data 中含各步 status/body/latency_ms
+
 ## curl 使用示例（Cookie Jar + CSRF）
 
 ```bash
