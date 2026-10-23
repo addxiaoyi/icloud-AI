@@ -189,10 +189,26 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {data && data.accounts.length === 0 && (
-          <p className="empty-state">
-            暂无账号，<Link to="/accounts" className="link-like">前往「账号」页添加 →</Link>
-          </p>
+        {data && (data.accounts.length === 0 || data.accounts.some((a) => a.status !== 'active')) && (
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>👋 三步开始使用</h3>
+            <ol style={{ lineHeight: 2, paddingLeft: 20 }}>
+              <li>
+                <strong>添加账号</strong> — 
+                <Link to="/accounts" className="link-like">前往「账号」页</Link>
+                → 「添加账号」→ 填个名字保存
+              </li>
+              <li>
+                <strong>登录 iCloud</strong> — 点账号行的「登录以启用」→ 输 Apple ID 密码 → 手机收到 6 位验证码后输入（输满自动提交）
+              </li>
+              <li>
+                <strong>创建别名</strong> — 
+                <Link to="/aliases" className="link-like">前往「别名」页</Link>
+                → 「创建别名」→ 复制地址去注册；验证码会出现在「收件箱」
+              </li>
+            </ol>
+            <p className="hint">完成第 2 步后本页会显示账号健康度与别名统计。</p>
+          </div>
         )}
       </AsyncState>
     </section>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { useToast } from './ToastProvider'
+import OnboardingBanner from './OnboardingBanner'
 import { useTheme, type ThemeChoice } from '../utils/theme'
 import { IconAccounts, IconAliases, IconDashboard, IconGear, IconInbox, IconLogout, IconShield } from './icons'
 
@@ -141,6 +142,7 @@ export default function AppShell() {
         </button>
       </header>
       <main id="main-content">
+        <OnboardingBanner />
         <Outlet />
       </main>
     </div>
